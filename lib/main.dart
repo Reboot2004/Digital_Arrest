@@ -6,6 +6,7 @@ import 'package:flutter_background_service_android/flutter_background_service_an
 import 'package:contacts_service/contacts_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -77,6 +78,7 @@ class _CallMonitorScreenState extends State<CallMonitorScreen> {
   List<Contact> contacts = [];
   String callStatus = "Waiting for call...";
   bool hasPermission = false;
+  final storage = FlutterSecureStorage();
 
   @override
   void initState() {
@@ -134,6 +136,8 @@ class _CallMonitorScreenState extends State<CallMonitorScreen> {
       String location = position != null
           ? "Lat: \${position.latitude}, Lng: \${position.longitude}"
           : "Location unavailable";
+
+      await storage.write(key: "last_call", value: "$number - $location");
 
       setState(() {
         callStatus = "Incoming call from $number\nKnown Contact: $isKnown\nLocation: $location";
