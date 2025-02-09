@@ -1,3 +1,4 @@
+
 import 'dart:ui';
 import 'package:phone_state/phone_state.dart';
 import 'package:flutter/material.dart';
@@ -79,6 +80,7 @@ class _CallMonitorScreenState extends State<CallMonitorScreen> {
   String callStatus = "Waiting for call...";
   bool hasPermission = false;
   final storage = FlutterSecureStorage();
+  bool showContacts = false; // Track whether to show contacts
 
   @override
   void initState() {
@@ -121,86 +123,118 @@ class _CallMonitorScreenState extends State<CallMonitorScreen> {
     }
   }
 
+// Define a global or class-level variable to track dialog state
+  bool isDialogOpen = false;
+
   void callStateHandler(PhoneState state) async {
     if (state.status == PhoneStateStatus.CALL_INCOMING) {
-      String? number = state.number ?? "Unknown";
+      String number = state.number?.trim() ?? "Unknown";
+
+      // Normalize phone number (removing spaces, dashes, etc.)
+      String normalizedNumber = number.replaceAll(RegExp(r'\D'), '');
+
       bool isKnown = contacts.any((contact) =>
-      contact.phones?.any((phone) => phone.value == number) ?? false);
+      contact.phones?.any((phone) =>
+      phone.value?.replaceAll(RegExp(r'\D'), '') == normalizedNumber) ??
+          false);
 
       Position? position;
+      String location = "Location unavailable";
+
       if (await Permission.location.isGranted) {
-        position = await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.high);
+        try {
+          position = await Geolocator.getCurrentPosition(
+              desiredAccuracy: LocationAccuracy.high);
+          location = "Lat: ${position.latitude}, Lng: ${position.longitude}";
+        } catch (e) {
+          location = "Error fetching location";
+        }
       }
 
-      String location = position != null
-          ? "Lat: \${position.latitude}, Lng: \${position.longitude}"
-          : "Location unavailable";
-
+      // Store call details
       await storage.write(key: "last_call", value: "$number - $location");
 
-      setState(() {
-        callStatus = "Incoming call from $number\nKnown Contact: $isKnown\nLocation: $location";
-      });
+      if (mounted) {
+        setState(() {
+          callStatus =
+          "Incoming call from $number\nKnown Contact: $isKnown\nLocation: $location";
+        });
 
-      Future.delayed(Duration.zero, () {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(isKnown ? "Known Caller" : "Unknown Caller"),
-            content: Text("Incoming call from: $number\n$location"),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text("OK"),
-              ),
-            ],
-          ),
-        );
-      });
+        // Ensure only one alert is displayed
+        if (!isDialogOpen) {
+          isDialogOpen = true; // Mark that a dialog is open
+
+          Future.delayed(Duration.zero, () {
+            if (mounted) {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: Text(isKnown ? "Known Caller" : "Unknown Caller"),
+                  content: Text("Incoming call from: $number\n$location"),
+                  actions: [
+                    TextButton(
+                      onPressed: () {
+                        isDialogOpen = false; // Reset dialog state
+                        Navigator.pop(context);
+                      },
+                      child: Text("OK"),
+                    ),
+                  ],
+                ),
+              );
+            }
+          });
+        }
+      }
     }
   }
+
+
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text("Call Monitor")),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text(
-              hasPermission ? 'Monitoring Calls' : 'No Permission',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text(
-              callStatus,
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16),
-            ),
-          ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: contacts.length,
-              itemBuilder: (context, index) {
-                return Card(
-                  elevation: 2,
-                  margin: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  child: ListTile(
-                    leading: Icon(Icons.contact_phone, color: Colors.blue),
-                    title: Text(contacts[index].displayName ?? "Unknown"),
-                    subtitle: Text(contacts[index].phones?.isNotEmpty == true
-                        ? contacts[index].phones!.first.value ?? "No number"
-                        : "No number"),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(hasPermission ? 'Monitoring Calls' : 'No Permission'),
+            SizedBox(height: 10),
+            Text(callStatus, textAlign: TextAlign.center),
+            SizedBox(height: 20),
+
+            // Show button only if contacts are not visible
+            if (!showContacts)
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    showContacts = true;
+                  });
+                },
+                child: Text("Show Contact List"),
+              ),
+
+            // Display contacts when button is clicked
+            if (showContacts)
+              Expanded(
+                child: ListView.builder(
+                  itemCount: contacts.length,
+                  itemBuilder: (context, index) {
+                    final contact = contacts[index];
+                    return ListTile(
+                      title: Text(contact.displayName ?? "Unknown"),
+                      subtitle: Text(
+                        contact.phones?.isNotEmpty == true
+                            ? contact.phones!.first.value ?? "No number"
+                            : "No number",
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
